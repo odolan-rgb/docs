@@ -1,0 +1,375 @@
+---
+title: 'Extreme'
+description:
+  'A guide to setting up and testing your Extreme environment for use with Helium Passpoint service.'
+category: 'WiFi Network Configuration'
+lastUpdated: '2025-11-06'
+---
+
+import useBaseUrl from '@docusaurus/useBaseUrl'
+
+# Extreme - ExtremeCloud IQ - Passpoint Configuration
+
+This guide describes how to set up and test your Extreme environment so you can use it with Helium
+Passpoint service.
+
+---
+
+## Prerequisites
+
+- Extreme system must be running ExtremeCloud IQ.
+- Guide assumes the network is using an on-prem Extreme controller.
+- Extreme system has AP(s) linked to the controller.
+- Extreme system has basic traffic routing working with existing SSID(s).
+- An Intel-based host is required in the network to run the RadSecProxy container.
+- RadSecProxy must be deployed and running before configuring Extreme. For deployment instructions,
+  see [RadSecProxy Deployment](#deploy-radsecproxy-container).
+
+---
+
+## High-Level Steps
+
+1. Deploy RadSecProxy container and record the IP address of the host
+2. Configure the Wireless LAN (SSID and RADIUS servers)
+3. Configure Hotspot 2.0
+4. Deploy configuration to access points
+5. Test Passpoint connectivity
+
+---
+
+## Deploy RadSecProxy Container
+
+RADIUS messages used to authenticate users and for session accounting are transmitted unsecured and
+over UDP by default. By directing these messages internally in your secure network to a RadSecProxy,
+the UDP is then converted to a TLS protected TCP connection to the Helium Network core AAA servers.
+
+### RadSecProxy Prerequisites
+
+- An Intel-based machine with Docker installed.
+- The Intel-based machine has a private IP in your network reachable from your Extreme controller.
+- ACLs or Firewalls allow Extreme controller and Docker container to communicate UDP on port 1812
+  and 1813.
+- ACLs or Firewalls allow container/host to reach the internet on TCP ports 2083 and 3802.
+
+### RadSecProxy Container Deployment
+
+1. Un-zip and untar the `Helium_RadSec_Docker.tar.gz` file into a directory of your choice on the
+   host machine. This will unpack:
+   - `Dockerfile` - The docker instructions to build the container
+   - `Radsecproxy.conf` - Pre-populated to connect to Helium Network AAA servers
+   - `docker-compose.yml` - File to start and stop the container as a daemon
+
+   ```bash
+   tar -xvzf Helium_RadSec_Docker.tar.gz
+   ```
+
+2. Into the same directory, copy the 3 certificates obtained from Helium Network:
+   - `ca.pem` - The root CA certificate
+   - `cert.pem` - The user certificate
+   - `key.pem` - The key file matched to the certificate
+
+3. Start the container using:
+
+   ```bash
+   sudo docker compose up -d
+   ```
+
+4. To stop the container:
+
+   ```bash
+   sudo docker compose down
+   ```
+
+5. Record the private IP address of the RadSecProxy host machine. You'll use this IP when
+   configuring RADIUS servers in your Extreme controller.
+
+---
+
+## Log in to the ExtremeCloud IQ Dashboard
+
+To start the configuration process, log in to the ExtremeCloud IQ Dashboard as admin. For existing
+environments with additional users, log in as a user with administrative privileges.
+
+The ExtremeCloud IQ Dashboard appears. Your access points are displayed.
+
+> **Note:** There are a number of options you can set. Only the options that require your input are
+> shown. Default values are used for options that don't need adjustment.
+
+---
+
+## Configure the Wireless LAN
+
+To configure the wireless LAN, you create a network policy (profile), an SSID, and RADIUS servers.
+
+### Create a Network Policy
+
+1. Click **Configure** in the menu bar on the left of the Dashboard.
+
+<figure className="screensnippet-wrapper">
+  <img
+    src={useBaseUrl('img/mobile-data-only/extreme/extreme-configure.png')}
+    style={{ maxHeight: '500px' }}
+    className="add-border-radius add-shadow add-shadow-margin"
+  />
+</figure>
+<br />
+2. Select **Network Policies**.
+<figure className="screensnippet-wrapper">
+  <img
+    src={useBaseUrl('img/mobile-data-only/extreme/extreme-networkpolicies.png')}
+    style={{ maxHeight: '500px' }}
+    className="add-border-radius add-shadow add-shadow-margin"
+  />
+</figure>
+<br />
+The Network Policy page appears.
+<figure className="screensnippet-wrapper">
+  <img
+    src={useBaseUrl('img/mobile-data-only/extreme/extreme-networkheliumpolicy.png')}
+    style={{ maxHeight: '500px' }}
+    className="add-border-radius add-shadow add-shadow-margin"
+  />
+</figure>
+<br />
+3. Click **Add Network Policy**. The Network Policies New Policy page appears with the **Policy
+Details** tab open.
+
+4. Under **What type of policy are you creating?**, leave the box checked next to **Wireless**.
+   Uncheck the boxes next to **Switches** and **Routing**.
+
+5. Enter a **Policy Name**, such as `Helium_network_policy`.
+
+6. Click **Save** on the bottom right. The Wireless Networks page appears.
+
+### Create an SSID
+
+1. Click **Configure** in the menu bar on the left of the dashboard.
+2. Select **Network Policies** under Configure.
+3. Select **Wireless Networks** at the top.
+4. Click **+** to create an SSID.
+5. Select **All other Networks (standard)**. A page appears where you'll define the SSID and
+   authentication settings.
+
+<figure className="screensnippet-wrapper">
+  <img
+    src={useBaseUrl('img/mobile-data-only/extreme/extreme-createssid.png')}
+    style={{ maxHeight: '500px' }}
+    className="add-border-radius add-shadow add-shadow-margin"
+  />
+</figure>
+<br />
+6. Enter an **SSID Name** for internal purposes, such as `Helium`, and a **Broadcast Name** that
+your clients will see. The names can be the same.
+
+7. For **SSID Usage**, select **Enterprise**. (The default is Private Pre-Shared Key.) In the **Key
+   Management** field, select **WPA3-802.1X** and as **Encryption Method** choose **CCMP (AES)**.
+
+### Add RadSec Authentication Servers to the Network Policy
+
+Your Extreme controller will communicate with the RadSecProxy instance you deployed, which securely
+proxies RADIUS traffic to Helium using TLS. Ensure you have the private IP address or hostname of
+your RadSecProxy host from the [deployment step](#deploy-radsecproxy-container).
+
+To add RadSec authentication servers to your network policy, you create a server group and then add
+servers to the group. Ensure your Extreme controller supports RadSec (RADIUS over TLS).
+
+1. Still on the **Wireless Networks** page, scroll down to **Authentication Settings**.
+2. Under **Authenticate via RADIUS Server**, click **+** to add a RADIUS server group. The
+   **Configure RADIUS Servers** dialog box appears.
+3. Enter a **RADIUS Server Group Name**, such as `Helium_radsec_group`.
+4. Click **Settings** to the right of the server group description. The **Select RADIUS Settings**
+   dialog box appears.
+5. Change the **Accounting interim update interval** to `300` (seconds).
+6. Click **Save RADIUS Settings** on the bottom right. You return to the Configure RADIUS Servers
+   dialog box.
+7. Click **+** under **External RADIUS Server** to add a RadSec server to the server group. The
+   dialog box expands to display a **New External RADIUS Server** section.
+
+8. Enter the **Name**, such as `primary_radsec`.
+
+9. Click **+** next to **IP/Host Name**.
+
+10. Select **IP Address**. The **New IP Address or Host Name** dialog box appears.
+
+11. Enter the object **Name**, such as `Primary`.
+
+12. Enter the RadSecProxy server address (the local IP address or hostname of your RadSecProxy
+    instance) with port `1812` for authentication in **IP Address/Port**. For example:
+    `192.168.1.100:1812`
+
+13. Click **Save IP Object** on the bottom right. You return to the New External RADIUS Server
+    section. You see the name of the object you created in the IP/Host Name field.
+
+<figure className="screensnippet-wrapper">
+  <img
+    src={useBaseUrl('img/mobile-data-only/extreme/extreme-configureradius.png')}
+    style={{ maxHeight: '500px' }}
+    className="add-border-radius add-shadow add-shadow-margin"
+  />
+</figure>
+<br />
+
+14. Enter the **Shared Secret** as `mysecret` (the default secret configured in the RadSecProxy
+    container).
+
+15. Click **Save External RADIUS** on the bottom right. You return to the Configure RADIUS Servers
+    page where you see the server you added (`primary_radsec`).
+
+16. Check the box next to the server you added. This indicates you want to add it to the server
+    group.
+
+17. Click **Save RADIUS** on the bottom right to save your RadSec configuration. You return to the
+    **Authenticate via RADIUS Server** section of the Wireless Networks page. You see the RadSec
+    server group and server you created.
+
+18. Click **Save** on the bottom right to save your network policy configuration. You return to the
+    Wireless Networks page where you see the SSID you created.
+
+### Assign the SSID to the Network Policy
+
+1. Still on the **Wireless Networks** page, select the SSID by clicking the checkbox next to
+   `Helium`.
+2. Click **Next** on the bottom right. Clicking Next assigns the selected SSID to the network
+   policy.
+
+The network policy configuration is complete.
+
+---
+
+## Configure Hotspot 2.0
+
+Hotspot 2.0 allows mobile devices to join a WiFi network automatically via Passpoint when the
+devices enter the Hotspot 2.0 area.
+
+You'll use the supplemental CLI option to configure Hotspot 2.0. When you enable supplemental CLI,
+you enter the commands into the GUI. For that reason, we recommend composing the commands in a text
+file beforehand so you have them ready when enabling the supplemental CLI.
+
+### Compose Your CLI
+
+Create a text file with the commands that link your network policy to Hotspot 2.0.
+
+1. Create a hotspot profile with a profile name `Helium-profile`, an ANQP domain ID, and a network
+   type.
+   - `anqp-domain-id` default is `0`, which means the ANQP information is unique to this access
+     point.
+   - A network type of `2` indicates a Chargeable Public Network.
+
+```
+   hotspot profile Helium-profile
+   hotspot profile Helium-profile anqp-domain-id 0
+   hotspot profile Helium-profile network-type 2 access-internet
+```
+
+2. Configure the operator name `Helium-Operator` and the language (English).
+
+```
+   hotspot profile Helium-profile operator-name Helium-Operator language-code eng
+```
+
+3. Configure the hotspot to support IPv4 with double NATed private IPv4 address (`ip-type ipv4 2`).
+   `ipv6 0` indicates that IPv6 is not available.
+
+```
+   hotspot profile Helium-profile ip-type ipv4 2 ipv6 0
+```
+
+4. Configure the domain names for Helium Passpoint. Add both required domains:
+
+```
+   hotspot profile Helium-profile domain-name freedomfi.com
+   hotspot profile Helium-profile domain-name hellohelium.com
+```
+
+5. Create the NAI-realms for Helium Passpoint by specifying these parameters:
+   - **Encoding type** — `0` (the default)
+   - **EAP method** — `13` for EAP-TLS
+   - **Sub-method** — Certificate
+
+```
+   hotspot profile Helium-profile nai-realm freedomfi.com encoding-type 0
+   hotspot profile Helium-profile nai-realm freedomfi.com eap-method 13
+   hotspot profile Helium-profile nai-realm hellohelium.com encoding-type 0
+   hotspot profile Helium-profile nai-realm hellohelium.com eap-method 13
+```
+
+6. Configure the Helium SSID to use WPA3-AES 802.1X authentication.
+
+```
+   security-object Helium security protocol-suite wpa3-aes-8021x
+```
+
+7. Apply the `Helium-profile` hotspot profile to the Helium SSID.
+
+```
+   ssid Helium hotspot-profile Helium-profile
+```
+
+8. Save the configuration.
+
+```
+   save configuration
+```
+
+### Enable the Supplemental CLI
+
+1. Select **Global Settings** on the top right of the Dashboard under your user icon.
+   <figure className="screensnippet-wrapper">
+     <img
+       src={useBaseUrl('img/mobile-data-only/extreme/extreme-globalsettings.png')}
+       style={{ maxHeight: '500px' }}
+       className="add-border-radius add-shadow add-shadow-margin"
+     />
+   </figure>
+   <br />
+2. On the left side of the Dashboard, click **VIQ Management** under Administration. The VIQ
+   Management page appears.
+   <figure className="screensnippet-wrapper">
+     <img
+       src={useBaseUrl('img/mobile-data-only/extreme/extreme-viqmanagement.png')}
+       style={{ maxHeight: '500px' }}
+       className="add-border-radius add-shadow add-shadow-margin"
+     />
+   </figure>
+   <br />
+3. Verify that **Supplemental CLI** is ON. If not, enable it.
+
+### Add the Hotspot 2.0 Configuration to the Network Policy
+
+1. Click **Configure** in the menu bar on the left of the Dashboard.
+2. Select **Network Policies**. The Network Policy page appears. You see the network policy you
+   created, `Helium_network_policy`.
+3. Click the name of the SSID you created, `Helium`. The Wireless Network page appears.
+4. Click **Additional Settings** in the top menu bar. The DNS Server page appears.
+5. Under **Policy Settings** in the menu bar on the left, click **Supplemental CLI**. The
+   Supplemental CLI page appears.
+6. Verify that **Supplemental CLI** is ON. If not, enable it.
+   <figure className="screensnippet-wrapper">
+     <img
+       src={useBaseUrl('img/mobile-data-only/extreme/extreme-supplementalcli.png')}
+       style={{ maxHeight: '500px' }}
+       className="add-border-radius add-shadow add-shadow-margin"
+     />
+   </figure>
+   <br />
+7. Enter a **Name**, such as `Hotspot`.
+8. Paste the CLI commands from your text file into the **CLI Commands** box.
+9. Click **Save** on the bottom right. A message appears on the top left indicating that the
+   supplemental CLI was saved.
+10. Click **Next**. The **Apply the network policy to selected devices** page appears.
+11. Click **Eligible** to display your access points.
+12. Select your access points by checking the box next to them in the **Status** column.
+13. Click **Upload** on the bottom right. The **Device Update** dialog box appears.
+    <figure className="screensnippet-wrapper">
+      <img
+        src={useBaseUrl('img/mobile-data-only/extreme/extreme-deviceupdate.png')}
+        style={{ maxHeight: '500px' }}
+        className="add-border-radius add-shadow add-shadow-margin"
+      />
+    </figure>
+    <br />
+14. Under **Update Network Policy and Configuration**, select **Complete Configuration Update**.
+    (Delta Configuration Update is the default; you want a complete update.)
+15. Click **Perform Update** on the bottom right of the dialog box to save your configuration. The
+    access points are rebooted (this can take a few minutes). You see a message on the upper left
+    indicating that the devices are successfully deployed.
